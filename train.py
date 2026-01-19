@@ -10,7 +10,6 @@ from datetime import datetime
 from diffusion_model import DiffusionModel
 from dataset import create_dataloader
 from metrics import calculate_metrics_for_frames
-from losses import SSIMLoss  # Import SSIM loss for better image quality
 
 
 class Trainer:
@@ -24,15 +23,24 @@ class Trainer:
         save_dir='checkpoints',
         gradient_accumulation_steps=1,
         use_amp=True,
-        resume_from=None
+        resume_from=None,
+        use_multi_gpu=True  # Enable multi-GPU by default
     ):
-        self.model = model.to(device)
-        self.train_loader = train_loader
-        self.val_loader = val_loader
         self.device = device
         self.save_dir = save_dir
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.use_amp = use_amp and device == 'cuda'
+        self.use_multi_gpu = use_multi_gpu and torch.cuda.device_count() > 1
+        
+        # Multi-GPU support with DataParallel
+        if self.use_multi_gpu:
+            print(f"✓ Using {torch.cuda.device_count()} GPUs with DataParallel")
+            self.model = nn.DataParallel(model).to(device)
+        else:
+            self.model = model.to(device)
+        
+        self.train_loader = train_loader
+        self.val_loader = val_loader
         
         # Mixed precision training
         self.scaler = torch.amp.GradScaler('cuda') if self.use_amp else None
@@ -46,11 +54,8 @@ class Trainer:
         self.total_steps = len(train_loader) * 100  # Total training steps
         self.current_step = 0
         
-        # Loss function - Combined MSE + SSIM for better perceptual quality
-        self.mse_loss = nn.MSELoss()
-        self.ssim_loss = SSIMLoss(channel=10)  # 2 frames * 5 channels
-        self.ssim_weight = 0.1  # Weight for SSIM component
-        self.criterion = nn.MSELoss()  # Keep for validation
+        # Loss function - MSE for noise prediction (standard diffusion training)
+        self.criterion = nn.MSELoss()
         
         # Create save directory
         os.makedirs(save_dir, exist_ok=True)
@@ -351,19 +356,19 @@ class Trainer:
 
 
 def main():
-    # Configuration optimized for A100 GPU with 250GB RAM
+    # Configuration optimized for AMD MI325X GPUs with 256GB VRAM
     config = {
         'data_dir': 'data/APR25',
-        'batch_size': 4,  # Reduced to fit in 40GB GPU
-        'gradient_accumulation_steps': 2,  # Effective batch = 8
+        'batch_size': 16,  # Increased for MI325X with 256GB VRAM
+        'gradient_accumulation_steps': 1,  # No accumulation needed with large batch
         'num_epochs': 200,  # Increased for better convergence
         'learning_rate': 2e-4,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'save_dir': 'checkpoints',
-        'num_workers': 12,  # Balanced for data loading
+        'num_workers': 16,  # Increased for 128-core CPU
         'validate_every': 5,
         'save_every': 10,
-        'use_amp': True,  # Mixed precision for A100
+        'use_amp': True,  # Mixed precision works on MI325X
         'resume_from': 'checkpoints/best_psnr_checkpoint.pt',  # Resume from best checkpoint
         'pin_memory': True,
         'persistent_workers': True
@@ -408,12 +413,24 @@ def main():
     print("Initializing model...")
     model = DiffusionModel(timesteps=1000)
     
-    # Enable TF32 for A100 (faster training)
+    # Enable optimizations based on GPU type
     if torch.cuda.is_available():
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-        print(f"✓ CUDA available: {torch.cuda.get_device_name(0)}")
-        print(f"✓ TF32 enabled for faster training")
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"✓ GPU available: {gpu_name}")
+        print(f"✓ GPU count: {torch.cuda.device_count()}")
+        print(f"✓ GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        
+        # Enable TF32 for NVIDIA Ampere+ GPUs only
+        if 'NVIDIA' in gpu_name or 'A100' in gpu_name or 'H100' in gpu_name:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            print(f"✓ TF32 enabled for NVIDIA GPU")
+        elif 'AMD' in gpu_name or 'MI' in gpu_name or 'Instinct' in gpu_name:
+            # AMD GPU optimizations
+            print(f"✓ AMD GPU detected - using ROCm backend")
+        
+        # Set memory fraction to avoid OOM
+        # torch.cuda.set_per_process_memory_fraction(0.9)  # Use 90% of VRAM
     
     # Create trainer
     trainer = Trainer(

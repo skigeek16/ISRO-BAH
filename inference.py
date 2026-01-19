@@ -82,14 +82,14 @@ class FramePredictor:
         return context
     
     @torch.no_grad()
-    def predict(self, context, use_ddim=False, ddim_steps=50):
+    def predict(self, context, use_ddim=True, ddim_steps=100):
         """
         Predict 2 future frames given 4 context frames
         
         Args:
             context: Tensor of shape (1, 20, 720, 720) or (20, 720, 720)
-            use_ddim: Use DDIM for faster sampling (50 steps vs 1000)
-            ddim_steps: Number of steps for DDIM sampling
+            use_ddim: Use DDIM for faster sampling (100 steps vs 1000)
+            ddim_steps: Number of steps for DDIM sampling (default: 100 for better quality)
         
         Returns:
             Predicted frames of shape (1, 10, 720, 720)

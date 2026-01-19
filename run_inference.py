@@ -117,8 +117,13 @@ def save_visualization(save_path, context, target, prediction, metrics, idx):
     plt.close()
 
 
-def run_inference(data_dir, checkpoint_path, output_dir, num_samples=10, device='cuda'):
-    """Run inference on data and save results"""
+def run_inference(data_dir, checkpoint_path, output_dir, num_samples=10, device='cuda', use_ddpm=False):
+    """Run inference on data and save results
+    
+    Args:
+        use_ddpm: If True, use DDPM sampling (1000 steps, slower but higher quality)
+                  If False, use DDIM sampling (100 steps, faster)
+    """
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -154,8 +159,12 @@ def run_inference(data_dir, checkpoint_path, output_dir, num_samples=10, device=
         target = torch.cat(frames[4:6], dim=0).unsqueeze(0).to(device)  # (1, 10, H, W)
         
         # Generate prediction
+        # Use DDPM for highest quality, DDIM for faster inference
         with torch.no_grad():
-            prediction = model.sample(context, device, use_ddim=True, ddim_steps=50)
+            if use_ddpm:
+                prediction = model.sample(context, device, use_ddim=False)  # 1000 steps
+            else:
+                prediction = model.sample(context, device, use_ddim=True, ddim_steps=100)  # 100 steps
         
         # Calculate metrics
         metrics = calculate_metrics_for_frames(prediction, target)
@@ -219,10 +228,11 @@ def main():
     # Configuration
     config = {
         'data_dir': 'data/APR25',  # APR25 data folder
-        'checkpoint_path': 'checkpoints/best_ssim_checkpoint.pt',  # Best SSIM checkpoint
+        'checkpoint_path': 'checkpoints/best_psnr_checkpoint.pt',  # Use best PSNR checkpoint
         'output_dir': 'inference_results',
         'num_samples': 3,  # Only 3 samples as requested
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'use_ddpm': False  # Set True for highest quality (slower), False for faster inference
     }
     
     print("="*60)
@@ -259,7 +269,8 @@ def main():
         checkpoint_path=config['checkpoint_path'],
         output_dir=config['output_dir'],
         num_samples=config['num_samples'],
-        device=config['device']
+        device=config['device'],
+        use_ddpm=config['use_ddpm']
     )
 
 
