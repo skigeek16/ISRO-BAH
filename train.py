@@ -387,7 +387,7 @@ def main():
         'num_workers': 0,  # No multiprocessing to avoid hangs
         'validate_every': 5,
         'save_every': 10,
-        'use_amp': True,  # Mixed precision works on MI325X
+        'use_amp': False,  # Disabled - causes hang on AMD GPUs
         'resume_from': None,  # Start fresh, no checkpoint resume
         'pin_memory': True,
         'persistent_workers': False  # Disabled to avoid hangs
