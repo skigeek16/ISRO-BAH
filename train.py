@@ -41,6 +41,13 @@ class Trainer:
         
         self.train_loader = train_loader
         self.val_loader = val_loader
+    
+    @property
+    def base_model(self):
+        """Get underlying model (handles DataParallel wrapper)"""
+        if self.use_multi_gpu:
+            return self.model.module
+        return self.model
         
         # Mixed precision training
         self.scaler = torch.amp.GradScaler('cuda') if self.use_amp else None
@@ -101,16 +108,16 @@ class Trainer:
                 
                 # Sample random timesteps
                 batch_size = context.shape[0]
-                t = torch.randint(0, self.model.timesteps, (batch_size,), device=self.device).long()
+                t = torch.randint(0, self.base_model.timesteps, (batch_size,), device=self.device).long()
                 
                 # Mixed precision training
                 with torch.amp.autocast('cuda', enabled=self.use_amp):
                     # Add noise to target frames
                     noise = torch.randn_like(target)
-                    noisy_target = self.model.forward_diffusion(target, t, noise)
+                    noisy_target = self.base_model.forward_diffusion(target, t, noise)
                     
                     # Predict noise
-                    predicted_noise = self.model.predict_noise(noisy_target, context, t)
+                    predicted_noise = self.base_model.predict_noise(noisy_target, context, t)
                     
                     # Calculate loss
                     loss = self.criterion(predicted_noise, noise)
@@ -197,7 +204,7 @@ class Trainer:
                 target = target.to(self.device, non_blocking=True)
                 
                 # Generate predictions (use DDIM with more steps for better quality)
-                predicted = self.model.sample(context, self.device, use_ddim=True, ddim_steps=100)
+                predicted = self.base_model.sample(context, self.device, use_ddim=True, ddim_steps=100)
                 
                 # Calculate loss
                 loss = self.criterion(predicted, target)
