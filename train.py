@@ -102,26 +102,38 @@ class Trainer:
         
         pbar = tqdm(self.train_loader, desc=f'Epoch {epoch}')
         for batch_idx, (context, target) in enumerate(pbar):
+            if batch_idx == 0:
+                print(f"[DEBUG] Got first batch: context={context.shape}, target={target.shape}")
             try:
                 context = context.to(self.device, non_blocking=True)
                 target = target.to(self.device, non_blocking=True)
+                if batch_idx == 0:
+                    print(f"[DEBUG] Moved to device")
                 
                 # Sample random timesteps
                 batch_size = context.shape[0]
                 t = torch.randint(0, self.base_model.timesteps, (batch_size,), device=self.device).long()
+                if batch_idx == 0:
+                    print(f"[DEBUG] Created timesteps")
                 
                 # Mixed precision training
                 with torch.amp.autocast('cuda', enabled=self.use_amp):
                     # Add noise to target frames
                     noise = torch.randn_like(target)
                     noisy_target = self.base_model.forward_diffusion(target, t, noise)
+                    if batch_idx == 0:
+                        print(f"[DEBUG] Forward diffusion done")
                     
                     # Predict noise
                     predicted_noise = self.base_model.predict_noise(noisy_target, context, t)
+                    if batch_idx == 0:
+                        print(f"[DEBUG] Predict noise done")
                     
                     # Calculate loss
                     loss = self.criterion(predicted_noise, noise)
                     loss = loss / self.gradient_accumulation_steps
+                    if batch_idx == 0:
+                        print(f"[DEBUG] Loss calculated: {loss.item()}")
                 
                 # Backpropagation with gradient scaling
                 if self.scaler is not None:
