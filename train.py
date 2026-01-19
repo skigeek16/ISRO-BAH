@@ -42,13 +42,6 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
     
-    @property
-    def base_model(self):
-        """Get underlying model (handles DataParallel wrapper)"""
-        if self.use_multi_gpu:
-            return self.model.module
-        return self.model
-        
         # Mixed precision training
         self.scaler = torch.amp.GradScaler('cuda') if self.use_amp else None
         
@@ -83,6 +76,13 @@ class Trainer:
         # Resume from checkpoint if provided
         if resume_from and os.path.exists(resume_from):
             self.load_checkpoint(resume_from)
+    
+    @property
+    def base_model(self):
+        """Get underlying model (handles DataParallel wrapper)"""
+        if self.use_multi_gpu:
+            return self.model.module
+        return self.model
     
     def get_lr(self):
         """Get learning rate with warmup and cosine decay"""
