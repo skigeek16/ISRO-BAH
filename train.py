@@ -358,7 +358,7 @@ class Trainer:
 def main():
     # Configuration optimized for AMD MI325X GPUs with 256GB VRAM
     config = {
-        'data_dir': 'data/APR25',
+        'data_dir': 'Data/',
         'batch_size': 16,  # Increased for MI325X with 256GB VRAM
         'gradient_accumulation_steps': 1,  # No accumulation needed with large batch
         'num_epochs': 200,  # Increased for better convergence
