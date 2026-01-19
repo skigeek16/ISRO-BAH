@@ -372,13 +372,13 @@ def main():
         'learning_rate': 2e-4,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'save_dir': 'checkpoints',
-        'num_workers': 16,  # Increased for 128-core CPU
+        'num_workers': 4,  # Reduced to avoid data loading issues
         'validate_every': 5,
         'save_every': 10,
         'use_amp': True,  # Mixed precision works on MI325X
-        'resume_from': 'checkpoints/best_psnr_checkpoint.pt',  # Resume from best checkpoint
+        'resume_from': None,  # Start fresh, no checkpoint resume
         'pin_memory': True,
-        'persistent_workers': True
+        'persistent_workers': False  # Disabled to avoid hangs
     }
     
     print("\n" + "="*60)
