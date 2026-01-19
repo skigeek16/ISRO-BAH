@@ -372,7 +372,7 @@ def main():
         'learning_rate': 2e-4,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'save_dir': 'checkpoints',
-        'num_workers': 4,  # Reduced to avoid data loading issues
+        'num_workers': 0,  # No multiprocessing to avoid hangs
         'validate_every': 5,
         'save_every': 10,
         'use_amp': True,  # Mixed precision works on MI325X
