@@ -227,7 +227,7 @@ def run_inference(data_dir, checkpoint_path, output_dir, num_samples=10, device=
 def main():
     # Configuration
     config = {
-        'data_dir': 'data/APR25',  # APR25 data folder
+        'data_dir': 'Data/APR25',  # Data folder with .pt files
         'checkpoint_path': 'checkpoints/best_psnr_checkpoint.pt',  # Use best PSNR checkpoint
         'output_dir': 'inference_results',
         'num_samples': 3,  # Only 3 samples as requested
