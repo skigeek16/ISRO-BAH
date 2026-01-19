@@ -136,13 +136,19 @@ class Trainer:
                         print(f"[DEBUG] Loss calculated: {loss.item()}")
                 
                 # Backpropagation with gradient scaling
+                if batch_idx == 0:
+                    print("[DEBUG] Starting backward pass...")
                 if self.scaler is not None:
                     self.scaler.scale(loss).backward()
                 else:
                     loss.backward()
+                if batch_idx == 0:
+                    print("[DEBUG] Backward pass done")
                 
                 # Update weights every gradient_accumulation_steps
                 if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
+                    if batch_idx == 0:
+                        print("[DEBUG] Starting optimizer step...")
                     if self.scaler is not None:
                         self.scaler.unscale_(self.optimizer)
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -151,6 +157,8 @@ class Trainer:
                     else:
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                         self.optimizer.step()
+                    if batch_idx == 0:
+                        print("[DEBUG] Optimizer step done")
                     
                     # Update learning rate
                     lr = self.get_lr()
@@ -162,6 +170,8 @@ class Trainer:
                 
                 total_loss += loss.item() * self.gradient_accumulation_steps
                 num_batches_processed += 1
+                if batch_idx == 0:
+                    print("[DEBUG] First batch complete!")
                 
                 # Update progress bar
                 pbar.set_postfix({
