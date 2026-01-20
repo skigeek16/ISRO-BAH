@@ -394,10 +394,10 @@ def main():
         'learning_rate': 2e-4,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'save_dir': 'checkpoints',
-        'num_workers': 0,  # No multiprocessing to avoid hangs
+        'num_workers': 8,  # Re-enabled for faster data loading
         'validate_every': 5,
         'save_every': 10,
-        'use_amp': False,  # Disabled - causes hang on AMD GPUs
+        'use_amp': True,  # Re-enabled for faster training
         'resume_from': None,  # Start fresh, no checkpoint resume
         'pin_memory': True,
         'persistent_workers': False  # Disabled to avoid hangs
