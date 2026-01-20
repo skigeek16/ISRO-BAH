@@ -21,8 +21,10 @@ from dataset import FrameSequenceDataset
 
 def setup(rank, world_size):
     """Initialize distributed training"""
-    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_ADDR'] = '127.0.0.1'  # Use IP instead of hostname
     os.environ['MASTER_PORT'] = '12355'
+    os.environ['NCCL_DEBUG'] = 'WARN'  # Reduce debug noise
+    os.environ['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
