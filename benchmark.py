@@ -85,7 +85,7 @@ def benchmark_training(config):
     print(f"   Parameters: {param_count:,} ({param_count/1e6:.1f}M)")
     
     # Create dataloader
-    train_loader, _ = create_dataloader(
+    train_loader = create_dataloader(
         config['data_dir'], 
         batch_size=config['batch_size'],
         num_workers=config['num_workers']
