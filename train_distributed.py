@@ -16,7 +16,7 @@ import json
 from datetime import datetime
 
 from diffusion_model import DiffusionModel, EMA
-from dataset import SatelliteSequenceDataset
+from dataset import FrameSequenceDataset
 
 
 def setup(rank, world_size):
@@ -116,9 +116,8 @@ def main():
         print(f"Model parameters: {param_count:,}")
     
     # Create dataset with distributed sampler
-    train_dataset = SatelliteSequenceDataset(
+    train_dataset = FrameSequenceDataset(
         config['data_dir'],
-        split='train',
         sequence_length=6
     )
     
