@@ -2,6 +2,7 @@
 """
 Hardware Benchmarking Script for Diffusion Model
 Measures: throughput, latency, VRAM usage, multi-GPU scaling
+Generates visual benchmark reports
 """
 
 import torch
@@ -11,6 +12,9 @@ import os
 import subprocess
 from datetime import datetime
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for servers
 
 from diffusion_model import DiffusionModel
 from dataset import create_dataloader
@@ -267,7 +271,7 @@ def benchmark_scaling(config):
         if gpu_count > 1:
             model = torch.nn.DataParallel(model)
         
-        train_loader, _ = create_dataloader(
+        train_loader = create_dataloader(
             config['data_dir'],
             batch_size=config['batch_size'] * gpu_count,
             num_workers=config['num_workers']
@@ -338,6 +342,131 @@ def benchmark_scaling(config):
     return {'scaling': scaling_results}
 
 
+def create_benchmark_visualizations(results, output_dir):
+    """Create visualization graphs for benchmark results"""
+    print("\n" + "="*60)
+    print("📊 GENERATING VISUALIZATIONS")
+    print("="*60)
+    
+    # Set style
+    plt.style.use('seaborn-v0_8-darkgrid' if 'seaborn-v0_8-darkgrid' in plt.style.available else 'default')
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle('Diffusion Model Hardware Benchmark Results', fontsize=16, fontweight='bold')
+    
+    # 1. Training Throughput Bar Chart
+    ax1 = axes[0, 0]
+    if 'training' in results:
+        training = results['training']
+        metrics = ['Throughput\n(samples/sec)', 'Batch Time\n(ms)', 'Latency/Sample\n(ms)']
+        values = [
+            training.get('throughput_samples_per_sec', 0),
+            training.get('avg_batch_time_sec', 0) * 1000,
+            training.get('latency_per_sample_ms', 0)
+        ]
+        colors = ['#2ecc71', '#3498db', '#9b59b6']
+        bars = ax1.bar(metrics, values, color=colors, edgecolor='white', linewidth=1.5)
+        ax1.set_title('Training Performance', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Value')
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'{val:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    # 2. DDIM Inference Latency
+    ax2 = axes[0, 1]
+    if 'inference' in results:
+        inference = results['inference']
+        steps = []
+        times = []
+        for key, val in inference.items():
+            if 'ddim' in key:
+                step_num = int(key.split('_')[1])
+                steps.append(step_num)
+                times.append(val.get('avg_time_ms', 0))
+        
+        if steps:
+            # Sort by steps
+            sorted_data = sorted(zip(steps, times))
+            steps, times = zip(*sorted_data)
+            
+            ax2.plot(steps, times, 'o-', color='#e74c3c', linewidth=2.5, markersize=10, markerfacecolor='white', markeredgewidth=2)
+            ax2.fill_between(steps, times, alpha=0.3, color='#e74c3c')
+            ax2.set_title('Inference Latency vs DDIM Steps', fontsize=12, fontweight='bold')
+            ax2.set_xlabel('DDIM Steps')
+            ax2.set_ylabel('Latency (ms)')
+            ax2.set_xticks(steps)
+            # Add value labels
+            for s, t in zip(steps, times):
+                ax2.annotate(f'{t:.0f}ms', (s, t), textcoords="offset points",
+                            xytext=(0, 10), ha='center', fontsize=9, fontweight='bold')
+    
+    # 3. Memory Usage
+    ax3 = axes[1, 0]
+    if 'training' in results:
+        peak_mem_gb = results['training'].get('peak_memory_gb', 0)
+        if 'hardware' in results:
+            total_mem_gb = results['hardware'].get('total_vram_gb', 256)
+        else:
+            total_mem_gb = 256
+        
+        used_pct = (peak_mem_gb / total_mem_gb) * 100 if total_mem_gb > 0 else 0
+        free_pct = 100 - used_pct
+        
+        sizes = [used_pct, free_pct]
+        labels = [f'Used\n{peak_mem_gb:.1f} GB', f'Free\n{total_mem_gb - peak_mem_gb:.1f} GB']
+        colors = ['#e74c3c', '#2ecc71']
+        explode = (0.05, 0)
+        
+        wedges, texts, autotexts = ax3.pie(sizes, labels=labels, colors=colors, explode=explode,
+                                            autopct='%1.1f%%', startangle=90,
+                                            textprops={'fontsize': 10})
+        ax3.set_title(f'GPU Memory Usage (Total: {total_mem_gb:.0f} GB)', fontsize=12, fontweight='bold')
+    
+    # 4. Hardware Info & Summary
+    ax4 = axes[1, 1]
+    ax4.axis('off')
+    
+    summary_text = "📋 BENCHMARK SUMMARY\n" + "="*40 + "\n\n"
+    
+    if 'hardware' in results:
+        hw = results['hardware']
+        summary_text += f"🖥️  Hardware:\n"
+        summary_text += f"   • GPUs: {hw.get('num_gpus', 0)}\n"
+        if hw.get('gpu_names'):
+            summary_text += f"   • Model: {hw['gpu_names'][0]}\n"
+        summary_text += f"   • Total VRAM: {hw.get('total_vram_gb', 0):.0f} GB\n\n"
+    
+    if 'config' in results:
+        cfg = results['config']
+        summary_text += f"⚙️  Configuration:\n"
+        summary_text += f"   • Batch Size: {cfg.get('batch_size', 0)}\n"
+        summary_text += f"   • Mixed Precision: {'✓' if cfg.get('use_amp') else '✗'}\n\n"
+    
+    if 'training' in results:
+        tr = results['training']
+        summary_text += f"📈 Training Metrics:\n"
+        summary_text += f"   • Throughput: {tr.get('throughput_samples_per_sec', 0):.2f} samples/sec\n"
+        summary_text += f"   • Batch Time: {tr.get('avg_batch_time_sec', 0)*1000:.1f} ms\n"
+        summary_text += f"   • Peak Memory: {tr.get('peak_memory_gb', 0):.2f} GB\n"
+    
+    ax4.text(0.1, 0.95, summary_text, transform=ax4.transAxes, fontsize=11,
+            verticalalignment='top', fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='#ecf0f1', alpha=0.8))
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    # Save figure
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    plot_path = os.path.join(output_dir, f'benchmark_report_{timestamp}.png')
+    plt.savefig(plot_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    
+    print(f"   ✓ Saved: {plot_path}")
+    return plot_path
+
+
 def main():
     config = {
         'data_dir': 'Data/',
@@ -375,10 +504,14 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(all_results, f, indent=2)
     
+    # Generate visualizations
+    plot_path = create_benchmark_visualizations(all_results, 'benchmarks')
+    
     print("\n" + "="*60)
     print("📁 RESULTS SAVED")
     print("="*60)
-    print(f"   File: {output_file}")
+    print(f"   JSON: {output_file}")
+    print(f"   Plot: {plot_path}")
     print("\n✅ Benchmark complete!")
 
 
