@@ -342,6 +342,82 @@ def benchmark_scaling(config):
     return {'scaling': scaling_results}
 
 
+def benchmark_vram_stress(config):
+    """Stress test VRAM with increasing batch sizes"""
+    print("\n" + "="*60)
+    print("🔥 VRAM STRESS TEST")
+    print("="*60)
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if device != 'cuda':
+        print("   Skipping - no GPU available")
+        return {}
+    
+    # Clear any existing memory
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    
+    results = {
+        'batch_sizes': [],
+        'vram_used_gb': [],
+        'max_batch_size': 0,
+        'max_vram_gb': 0
+    }
+    
+    # Test increasing batch sizes
+    batch_sizes = [8, 16, 32, 48, 64, 96, 128, 192, 256]
+    
+    for batch_size in batch_sizes:
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            
+            print(f"\n   Testing batch size: {batch_size}...")
+            
+            # Create model and data
+            model = DiffusionModel().to(device)
+            context = torch.randn(batch_size, 20, 720, 720, device=device)
+            target = torch.randn(batch_size, 10, 720, 720, device=device)
+            t = torch.randint(0, 1000, (batch_size,), device=device)
+            
+            # Forward pass
+            with torch.amp.autocast('cuda', enabled=config['use_amp']):
+                noise = torch.randn_like(target)
+                noisy = model.forward_diffusion(target, t, noise)
+                pred = model.predict_noise(noisy, context, t)
+                loss = torch.nn.functional.mse_loss(pred, noise)
+            
+            # Backward pass
+            loss.backward()
+            
+            torch.cuda.synchronize()
+            peak_memory = torch.cuda.max_memory_allocated() / 1e9
+            
+            results['batch_sizes'].append(batch_size)
+            results['vram_used_gb'].append(peak_memory)
+            results['max_batch_size'] = batch_size
+            results['max_vram_gb'] = peak_memory
+            
+            print(f"   ✓ Batch {batch_size}: {peak_memory:.2f} GB VRAM")
+            
+            # Clean up
+            del model, context, target, noise, noisy, pred, loss
+            torch.cuda.empty_cache()
+            
+        except RuntimeError as e:
+            if 'out of memory' in str(e).lower():
+                print(f"   ✗ Batch {batch_size}: OOM - max capacity reached")
+                torch.cuda.empty_cache()
+                break
+            else:
+                raise e
+    
+    print(f"\n   📊 Max batch size: {results['max_batch_size']}")
+    print(f"   📊 Max VRAM used: {results['max_vram_gb']:.2f} GB")
+    
+    return {'vram_stress': results}
+
+
 def create_benchmark_visualizations(results, output_dir):
     """Create visualization graphs for benchmark results"""
     print("\n" + "="*60)
@@ -424,6 +500,28 @@ def create_benchmark_visualizations(results, output_dir):
                                             textprops={'fontsize': 10})
         ax3.set_title(f'GPU Memory Usage (Total: {total_mem_gb:.0f} GB)', fontsize=12, fontweight='bold')
     
+    # Check for VRAM stress test results and use that instead if available
+    if 'vram_stress' in results and results['vram_stress'].get('batch_sizes'):
+        ax3.clear()  # Clear the pie chart
+        stress = results['vram_stress']
+        batch_sizes = stress['batch_sizes']
+        vram_used = stress['vram_used_gb']
+        
+        ax3.plot(batch_sizes, vram_used, 'o-', color='#9b59b6', linewidth=2.5, 
+                 markersize=10, markerfacecolor='white', markeredgewidth=2)
+        ax3.fill_between(batch_sizes, vram_used, alpha=0.3, color='#9b59b6')
+        ax3.set_title('VRAM Usage vs Batch Size', fontsize=12, fontweight='bold')
+        ax3.set_xlabel('Batch Size')
+        ax3.set_ylabel('VRAM Used (GB)')
+        ax3.set_xticks(batch_sizes)
+        
+        # Add max capacity annotation
+        max_idx = vram_used.index(max(vram_used))
+        ax3.annotate(f'Max: {vram_used[max_idx]:.1f} GB\n(batch={batch_sizes[max_idx]})',
+                     (batch_sizes[max_idx], vram_used[max_idx]),
+                     textcoords="offset points", xytext=(0, 15), ha='center',
+                     fontsize=10, fontweight='bold', color='#9b59b6')
+    
     # 4. Hardware Info & Summary
     ax4 = axes[1, 1]
     ax4.axis('off')
@@ -449,7 +547,13 @@ def create_benchmark_visualizations(results, output_dir):
         summary_text += f"📈 Training Metrics:\n"
         summary_text += f"   • Throughput: {tr.get('throughput_samples_per_sec', 0):.2f} samples/sec\n"
         summary_text += f"   • Batch Time: {tr.get('avg_batch_time_sec', 0)*1000:.1f} ms\n"
-        summary_text += f"   • Peak Memory: {tr.get('peak_memory_gb', 0):.2f} GB\n"
+        summary_text += f"   • Peak Memory: {tr.get('peak_memory_gb', 0):.2f} GB\n\n"
+    
+    if 'vram_stress' in results:
+        vram = results['vram_stress']
+        summary_text += f"🔥 VRAM Stress Test:\n"
+        summary_text += f"   • Max Batch Size: {vram.get('max_batch_size', 0)}\n"
+        summary_text += f"   • Max VRAM Used: {vram.get('max_vram_gb', 0):.1f} GB\n"
     
     ax4.text(0.1, 0.95, summary_text, transform=ax4.transAxes, fontsize=11,
             verticalalignment='top', fontfamily='monospace',
@@ -470,8 +574,8 @@ def create_benchmark_visualizations(results, output_dir):
 def main():
     config = {
         'data_dir': 'Data/',
-        'batch_size': 4,
-        'num_workers': 4,
+        'batch_size': 32,  # Large batch to stress VRAM (256GB per GPU)
+        'num_workers': 8,
         'use_amp': True,
         'benchmark_batches': 50
     }
@@ -495,6 +599,10 @@ def main():
     
     inference_results = benchmark_inference(config)
     all_results.update(inference_results)
+    
+    # VRAM stress test
+    vram_results = benchmark_vram_stress(config)
+    all_results.update(vram_results)
     
     # Save results
     os.makedirs('benchmarks', exist_ok=True)
