@@ -201,21 +201,26 @@ class DiffusionModel(nn.Module):
         super().__init__()
         self.timesteps = timesteps
         
-        # Define beta schedule
-        self.betas = torch.linspace(beta_start, beta_end, timesteps)
-        self.alphas = 1.0 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
+        # Define beta schedule - register as buffers so they move with model
+        betas = torch.linspace(beta_start, beta_end, timesteps)
+        alphas = 1.0 - betas
+        alphas_cumprod = torch.cumprod(alphas, dim=0)
+        alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
+        
+        # Register as buffers (non-trainable, but move with model.to(device))
+        self.register_buffer('betas', betas)
+        self.register_buffer('alphas', alphas)
+        self.register_buffer('alphas_cumprod', alphas_cumprod)
+        self.register_buffer('alphas_cumprod_prev', alphas_cumprod_prev)
         
         # Calculations for diffusion q(x_t | x_{t-1}) and others
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
-        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
+        self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(alphas_cumprod))
+        self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1.0 - alphas_cumprod))
+        self.register_buffer('sqrt_recip_alphas', torch.sqrt(1.0 / alphas))
         
         # Calculations for posterior q(x_{t-1} | x_t, x_0)
-        self.posterior_variance = (
-            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
-        )
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        self.register_buffer('posterior_variance', posterior_variance)
         
         # Model
         self.model = UNet(in_channels=30, out_channels=10)
@@ -229,11 +234,9 @@ class DiffusionModel(nn.Module):
         if isinstance(t, int):
             t = torch.tensor([t], device=x_0.device)
         
-        # Move t to CPU for indexing, then move results to x_0's device
-        t_cpu = t.cpu() if t.is_cuda else t
-        
-        sqrt_alphas_cumprod_t = self.sqrt_alphas_cumprod[t_cpu].view(-1, 1, 1, 1).to(x_0.device)
-        sqrt_one_minus_alphas_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t_cpu].view(-1, 1, 1, 1).to(x_0.device)
+        # Index directly on GPU - buffers are already on the same device as model
+        sqrt_alphas_cumprod_t = self.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1)
+        sqrt_one_minus_alphas_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1)
         
         return sqrt_alphas_cumprod_t * x_0 + sqrt_one_minus_alphas_cumprod_t * noise
 
