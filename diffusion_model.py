@@ -106,7 +106,7 @@ class AttentionBlock(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=30, out_channels=10, base_channels=96, time_emb_dim=256):
+    def __init__(self, in_channels=30, out_channels=10, base_channels=64, time_emb_dim=256):
         """
         UNet for diffusion model
         in_channels: 4 context frames (20 ch) + 2 noisy target frames (10 ch) = 30
