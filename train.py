@@ -388,8 +388,8 @@ def main():
     # Configuration optimized for AMD MI325X GPUs with 256GB VRAM
     config = {
         'data_dir': 'Data/',
-        'batch_size': 16,  # Increased for MI325X with 256GB VRAM
-        'gradient_accumulation_steps': 1,  # No accumulation needed with large batch
+        'batch_size': 4,  # Reduced to avoid OOM
+        'gradient_accumulation_steps': 4,  # Effective batch = 16
         'num_epochs': 200,  # Increased for better convergence
         'learning_rate': 2e-4,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
