@@ -133,15 +133,13 @@ class UNet(nn.Module):
         
         self.down2 = nn.ModuleList([
             ResidualBlock(base_channels, base_channels * 2, time_emb_dim),
-            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim),
-            AttentionBlock(base_channels * 2)  # Added attention at level 2
+            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim)
         ])
         self.downsample2 = nn.Conv2d(base_channels * 2, base_channels * 2, 4, stride=2, padding=1)
         
         self.down3 = nn.ModuleList([
             ResidualBlock(base_channels * 2, base_channels * 4, time_emb_dim),
-            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim),
-            AttentionBlock(base_channels * 4)  # Added attention at level 3
+            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim)
         ])
         self.downsample3 = nn.Conv2d(base_channels * 4, base_channels * 4, 4, stride=2, padding=1)
         
@@ -156,15 +154,13 @@ class UNet(nn.Module):
         self.upsample3 = nn.ConvTranspose2d(base_channels * 8, base_channels * 4, 4, stride=2, padding=1)
         self.up3 = nn.ModuleList([
             ResidualBlock(base_channels * 8, base_channels * 4, time_emb_dim),
-            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim),
-            AttentionBlock(base_channels * 4)  # Added attention in decoder
+            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim)
         ])
         
         self.upsample2 = nn.ConvTranspose2d(base_channels * 4, base_channels * 2, 4, stride=2, padding=1)
         self.up2 = nn.ModuleList([
             ResidualBlock(base_channels * 4, base_channels * 2, time_emb_dim),
-            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim),
-            AttentionBlock(base_channels * 2)  # Added attention in decoder
+            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim)
         ])
         
         self.upsample1 = nn.ConvTranspose2d(base_channels * 2, base_channels, 4, stride=2, padding=1)
