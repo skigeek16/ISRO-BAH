@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime
 
-from diffusion_model import DiffusionModel
+from diffusion_model import DiffusionModel, EMA
 from dataset import create_dataloader
 from metrics import calculate_metrics_for_frames
 
@@ -72,6 +72,9 @@ class Trainer:
         self.start_epoch = 1
         self.best_psnr = -float('inf')
         self.best_ssim = -float('inf')
+        
+        # EMA for stable inference
+        self.ema = EMA(self.base_model, decay=0.999)
         
         # Resume from checkpoint if provided
         if resume_from and os.path.exists(resume_from):
@@ -157,8 +160,9 @@ class Trainer:
                     else:
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                         self.optimizer.step()
-                    if batch_idx == 0:
-                        print("[DEBUG] Optimizer step done")
+                    
+                    # Update EMA
+                    self.ema.update(self.base_model)
                     
                     # Update learning rate
                     lr = self.get_lr()
@@ -170,8 +174,6 @@ class Trainer:
                 
                 total_loss += loss.item() * self.gradient_accumulation_steps
                 num_batches_processed += 1
-                if batch_idx == 0:
-                    print("[DEBUG] First batch complete!")
                 
                 # Update progress bar
                 pbar.set_postfix({
@@ -225,8 +227,10 @@ class Trainer:
                 context = context.to(self.device, non_blocking=True)
                 target = target.to(self.device, non_blocking=True)
                 
-                # Generate predictions (use DDIM with more steps for better quality)
-                predicted = self.base_model.sample(context, self.device, use_ddim=True, ddim_steps=100)
+                # Generate predictions using EMA model for more stable results
+                # Use DDIM with more steps for better quality during validation
+                ema_model = self.ema.get_model()
+                predicted = ema_model.sample(context, self.device, use_ddim=True, ddim_steps=200)
                 
                 # Calculate loss
                 loss = self.criterion(predicted, target)

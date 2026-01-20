@@ -2,8 +2,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from copy import deepcopy
 
 
+class EMA:
+    """Exponential Moving Average for model parameters.
+    
+    EMA maintains a shadow copy of model parameters that is updated
+    with exponential moving average. This provides more stable
+    inference compared to using the trained model directly.
+    """
+    def __init__(self, model, decay=0.999):
+        self.decay = decay
+        self.shadow = deepcopy(model)
+        self.shadow.eval()
+        for p in self.shadow.parameters():
+            p.requires_grad_(False)
+    
+    def update(self, model):
+        """Update EMA parameters"""
+        with torch.no_grad():
+            for ema_p, model_p in zip(self.shadow.parameters(), model.parameters()):
+                ema_p.data.mul_(self.decay).add_(model_p.data, alpha=1 - self.decay)
+    
+    def get_model(self):
+        """Get the EMA model for inference"""
+        return self.shadow
 class SinusoidalPositionEmbeddings(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -82,7 +106,7 @@ class AttentionBlock(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=30, out_channels=10, base_channels=64, time_emb_dim=256):
+    def __init__(self, in_channels=30, out_channels=10, base_channels=96, time_emb_dim=256):
         """
         UNet for diffusion model
         in_channels: 4 context frames (20 ch) + 2 noisy target frames (10 ch) = 30
@@ -109,13 +133,15 @@ class UNet(nn.Module):
         
         self.down2 = nn.ModuleList([
             ResidualBlock(base_channels, base_channels * 2, time_emb_dim),
-            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim)
+            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim),
+            AttentionBlock(base_channels * 2)  # Added attention at level 2
         ])
         self.downsample2 = nn.Conv2d(base_channels * 2, base_channels * 2, 4, stride=2, padding=1)
         
         self.down3 = nn.ModuleList([
             ResidualBlock(base_channels * 2, base_channels * 4, time_emb_dim),
-            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim)
+            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim),
+            AttentionBlock(base_channels * 4)  # Added attention at level 3
         ])
         self.downsample3 = nn.Conv2d(base_channels * 4, base_channels * 4, 4, stride=2, padding=1)
         
@@ -130,13 +156,15 @@ class UNet(nn.Module):
         self.upsample3 = nn.ConvTranspose2d(base_channels * 8, base_channels * 4, 4, stride=2, padding=1)
         self.up3 = nn.ModuleList([
             ResidualBlock(base_channels * 8, base_channels * 4, time_emb_dim),
-            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim)
+            ResidualBlock(base_channels * 4, base_channels * 4, time_emb_dim),
+            AttentionBlock(base_channels * 4)  # Added attention in decoder
         ])
         
         self.upsample2 = nn.ConvTranspose2d(base_channels * 4, base_channels * 2, 4, stride=2, padding=1)
         self.up2 = nn.ModuleList([
             ResidualBlock(base_channels * 4, base_channels * 2, time_emb_dim),
-            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim)
+            ResidualBlock(base_channels * 2, base_channels * 2, time_emb_dim),
+            AttentionBlock(base_channels * 2)  # Added attention in decoder
         ])
         
         self.upsample1 = nn.ConvTranspose2d(base_channels * 2, base_channels, 4, stride=2, padding=1)
@@ -156,42 +184,60 @@ class UNet(nn.Module):
         
         # Down 1
         for block in self.down1:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         skip1 = x  # Save BEFORE downsampling
         x = self.downsample1(x)
         
         # Down 2
         for block in self.down2:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         skip2 = x  # Save BEFORE downsampling
         x = self.downsample2(x)
         
         # Down 3
         for block in self.down3:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         skip3 = x  # Save BEFORE downsampling
         x = self.downsample3(x)
         
         # Bottleneck
         x = self.bottleneck[0](x, t_emb)
-        x = self.bottleneck[1](x)
+        x = self.bottleneck[1](x)  # Attention
         x = self.bottleneck[2](x, t_emb)
         
         # Decoder
         x = self.upsample3(x)
         x = torch.cat([x, skip3], dim=1)
         for block in self.up3:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         
         x = self.upsample2(x)
         x = torch.cat([x, skip2], dim=1)
         for block in self.up2:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         
         x = self.upsample1(x)
         x = torch.cat([x, skip1], dim=1)
         for block in self.up1:
-            x = block(x, t_emb)
+            if isinstance(block, AttentionBlock):
+                x = block(x)
+            else:
+                x = block(x, t_emb)
         
         return self.conv_out(x)
 
