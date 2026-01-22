@@ -239,7 +239,7 @@ class UNet(nn.Module):
 
 
 class DiffusionModel(nn.Module):
-    def __init__(self, timesteps=1000, beta_start=1e-4, beta_end=0.02):
+    def __init__(self, timesteps=1000, beta_start=1e-4, beta_end=0.02, base_channels=64):
         super().__init__()
         self.timesteps = timesteps
         
@@ -264,8 +264,8 @@ class DiffusionModel(nn.Module):
         posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
         self.register_buffer('posterior_variance', posterior_variance)
         
-        # Model
-        self.model = UNet(in_channels=30, out_channels=10)
+        # Model with configurable size
+        self.model = UNet(in_channels=30, out_channels=10, base_channels=base_channels)
 
     def forward_diffusion(self, x_0, t, noise=None):
         """Add noise to the data"""
