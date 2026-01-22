@@ -39,6 +39,14 @@ def calculate_ssim(img1, img2, window_size=11, channel=5, max_val=2.0):
     Returns:
         SSIM value
     """
+    # Ensure float32 for accurate SSIM calculation
+    img1 = img1.float()
+    img2 = img2.float()
+    
+    # Clamp values to valid range
+    img1 = torch.clamp(img1, -1, 1)
+    img2 = torch.clamp(img2, -1, 1)
+    
     ssim_metric = StructuralSimilarityIndexMeasure(data_range=max_val, kernel_size=window_size).to(img1.device)
     
     # Ensure batch dimension
@@ -47,7 +55,7 @@ def calculate_ssim(img1, img2, window_size=11, channel=5, max_val=2.0):
         img2 = img2.unsqueeze(0)
     
     ssim = ssim_metric(img1, img2)
-    return ssim.item()
+    return max(0.0, ssim.item())  # Clamp to non-negative
 
 
 def calculate_metrics_for_frames(pred_frames, target_frames):
