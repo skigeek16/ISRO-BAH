@@ -378,7 +378,7 @@ def main():
         'data_dir': 'Data/',
         'batch_size': 12,        # Per GPU (effective = 24 with 2 GPUs)
         'base_channels': 128,    # 2x larger (was 64) = ~4x more params
-        'num_epochs': 200,
+        'num_epochs': 400,
         'lr': 2e-4,
         'num_workers': 4,
         'use_amp': True,
