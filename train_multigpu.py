@@ -118,7 +118,7 @@ def validate(model, ema, val_loader, device, rank, use_amp=True, max_batches=5):
             
             # Generate predictions using DDIM sampling
             with torch.amp.autocast('cuda', enabled=use_amp):
-                predicted = eval_model.sample(context, device, use_ddim=True, ddim_steps=100)
+                predicted = eval_model.sample(context, device, use_ddim=True, ddim_steps=200)
                 loss = nn.functional.mse_loss(predicted, target)
             
             # Calculate metrics
@@ -413,7 +413,7 @@ def main():
         'save_dir': 'checkpoints',
         'val_every': 5,          # Validate every N epochs
         'val_batches': 5,        # Number of validation batches
-        'resume_from': 'checkpoints/checkpoint_e100.pt',  # Resume from last checkpoint
+        # 'resume_from': 'checkpoints/checkpoint_e100.pt',  # Uncomment to resume
     }
     
     # Spawn workers

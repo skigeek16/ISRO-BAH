@@ -315,7 +315,7 @@ class DiffusionModel(nn.Module):
             # DDIM sampling - much faster
             timestep_seq = torch.linspace(self.timesteps - 1, 0, ddim_steps, dtype=torch.long)
             for i in range(len(timestep_seq)):
-                t = timestep_seq[i].item()
+                t = int(timestep_seq[i].item())
                 t_batch = torch.full((B,), t, device=device, dtype=torch.long)
                 
                 # Predict noise
@@ -324,12 +324,17 @@ class DiffusionModel(nn.Module):
                 # DDIM update rule
                 alpha_t = self.alphas_cumprod[t].to(device)
                 if i < len(timestep_seq) - 1:
-                    alpha_prev = self.alphas_cumprod[timestep_seq[i+1].item()].to(device)
+                    next_t = int(timestep_seq[i+1].item())
+                    alpha_prev = self.alphas_cumprod[next_t].to(device)
                 else:
-                    alpha_prev = torch.tensor(1.0, device=device)
+                    # At final step, use alpha_0 (nearly 1.0) for smooth transition
+                    alpha_prev = self.alphas_cumprod[0].to(device)
                 
+                # Predict x_0 from current noisy sample
                 pred_x0 = (x_t - torch.sqrt(1 - alpha_t) * predicted_noise) / torch.sqrt(alpha_t)
                 pred_x0 = torch.clamp(pred_x0, -1.0, 1.0)  # Clamp to valid range
+                
+                # Direction pointing to x_t
                 direction = torch.sqrt(1 - alpha_prev) * predicted_noise
                 x_t = torch.sqrt(alpha_prev) * pred_x0 + direction
         else:
