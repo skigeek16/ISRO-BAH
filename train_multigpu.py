@@ -231,12 +231,40 @@ def train_worker(rank, world_size, config):
         }
         best_psnr = 0
         best_loss = float('inf')
+        start_epoch = 1
         
         if rank == 0:
             os.makedirs(config['save_dir'], exist_ok=True)
         
+        # Load checkpoint if resuming
+        if config.get('resume_from') and os.path.exists(config['resume_from']):
+            if rank == 0:
+                print(f"\n📂 Loading checkpoint: {config['resume_from']}")
+            
+            checkpoint = torch.load(config['resume_from'], map_location=device, weights_only=False)
+            model.module.load_state_dict(checkpoint['model'])
+            
+            if 'optimizer' in checkpoint:
+                optimizer.load_state_dict(checkpoint['optimizer'])
+            if 'scheduler' in checkpoint:
+                scheduler.load_state_dict(checkpoint['scheduler'])
+            
+            start_epoch = checkpoint.get('epoch', 0) + 1
+            best_psnr = checkpoint.get('best_psnr', 0)
+            best_loss = checkpoint.get('train_loss', float('inf'))
+            
+            # Load history if exists
+            history_path = os.path.join(config['save_dir'], 'training_history.json')
+            if os.path.exists(history_path):
+                with open(history_path, 'r') as f:
+                    history = json.load(f)
+            
+            if rank == 0:
+                print(f"   ✓ Resuming from epoch {start_epoch}")
+                print(f"   ✓ Best PSNR so far: {best_psnr:.2f} dB")
+        
         # Training loop
-        for epoch in range(1, config['num_epochs'] + 1):
+        for epoch in range(start_epoch, config['num_epochs'] + 1):
             train_sampler.set_epoch(epoch)
             
             # Training
@@ -385,6 +413,7 @@ def main():
         'save_dir': 'checkpoints',
         'val_every': 5,          # Validate every N epochs
         'val_batches': 5,        # Number of validation batches
+        'resume_from': 'checkpoints/checkpoint_e100.pt',  # Resume from last checkpoint
     }
     
     # Spawn workers
