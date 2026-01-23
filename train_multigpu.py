@@ -209,13 +209,22 @@ def train_worker(rank, world_size, config):
             print(f"Validation batches per epoch: {config['val_batches']}\n")
         
         # Optimizer and scaler
-        optimizer = optim.AdamW(model.parameters(), lr=config['lr'], weight_decay=0.05)
+        optimizer = optim.AdamW(model.parameters(), lr=config['lr'], weight_decay=0.01)
         scaler = torch.amp.GradScaler('cuda') if config['use_amp'] else None
         
-        # Learning rate scheduler
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=config['num_epochs'], eta_min=1e-6
-        )
+        # Learning rate scheduler with warmup
+        warmup_epochs = 10
+        def lr_lambda(epoch):
+            if epoch < warmup_epochs:
+                # Linear warmup from 0.1x to 1x
+                return 0.1 + 0.9 * (epoch / warmup_epochs)
+            else:
+                # Cosine decay after warmup
+                import math
+                progress = (epoch - warmup_epochs) / (config['num_epochs'] - warmup_epochs)
+                return 0.5 * (1 + math.cos(math.pi * progress))
+        
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         
         # EMA (rank 0 only)
         ema = EMA(model.module, decay=0.999) if rank == 0 else None
@@ -407,7 +416,7 @@ def main():
         'batch_size': 12,        # Per GPU (effective = 24 with 2 GPUs)
         'base_channels': 128,    # 2x larger (was 64) = ~4x more params
         'num_epochs': 400,
-        'lr': 2e-4,
+        'lr': 1e-4,              # Lowered for stability (was 2e-4)
         'num_workers': 4,
         'use_amp': True,
         'save_dir': 'checkpoints',
