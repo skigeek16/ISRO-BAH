@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Enhanced Distributed Training for AMD MI325X GPUs
+Enhanced Distributed Training for NVIDIA H200 GPUs
 - Full validation with PSNR/SSIM metrics
 - Larger model (base_channels=128 for ~4x parameters)
-- Uses PyTorch DDP with RCCL backend
+- Uses PyTorch DDP with NCCL backend
 """
 
 import os
@@ -25,11 +25,9 @@ from metrics import calculate_metrics_for_frames
 
 
 def setup_distributed(rank, world_size):
-    """Initialize distributed training with AMD/ROCm settings"""
+    """Initialize distributed training for NVIDIA GPUs"""
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
-    os.environ['RCCL_SOCKET_IFNAME'] = 'lo'
-    os.environ['NCCL_SOCKET_IFNAME'] = 'lo'
     os.environ['NCCL_DEBUG'] = 'WARN'
     
     torch.cuda.set_device(rank)
@@ -405,20 +403,21 @@ def main():
         print(f"   GPU {i}: {props.name} ({mem_gb:.0f} GB)")
     
     if world_size < 2:
-        print("\n⚠️  Only 1 GPU found. Use train.py instead.")
-        print("   For multi-GPU, ensure both GPUs are visible:")
-        print("   export HIP_VISIBLE_DEVICES=0,1")
-        sys.exit(1)
+        print("\n⚠️  Only 1 GPU found. Will train on single GPU.")
+        print("   For multi-GPU, ensure GPUs are visible:")
+        print("   export CUDA_VISIBLE_DEVICES=0,1")
+        # Allow single GPU training
+        world_size = 1
     
-    # Configuration - LARGER MODEL for more VRAM usage
+    # Configuration - Optimized for H200 (80GB VRAM)
     config = {
         'data_dir': 'Data/',
-        'batch_size': 12,        # Per GPU (effective = 24 with 2 GPUs)
-        'base_channels': 128,    # 2x larger (was 64) = ~4x more params
+        'batch_size': 16,        # Increased for H200 (80GB VRAM)
+        'base_channels': 128,    # 2x larger (was 64) = ~86M params
         'num_epochs': 400,
-        'lr': 1e-4,              # Lowered for stability (was 2e-4)
-        'num_workers': 4,
-        'use_amp': True,
+        'lr': 1e-4,              # Lowered for stability
+        'num_workers': 8,        # More workers for H200
+        'use_amp': True,         # TF32/FP16 mixed precision
         'save_dir': 'checkpoints',
         'val_every': 5,          # Validate every N epochs
         'val_batches': 5,        # Number of validation batches
